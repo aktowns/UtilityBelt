@@ -26,14 +26,59 @@
 namespace UtilityBelt
 open System
 open System.IO
-open System.IO.Packaging
+
+open UtilityBelt.File
 
 module Zip = 
-    let ZipPath (zipfile : string) (path : string) = 
+#if NO_EXTERNAL_DOTNETZIP 
+    open System.IO.Packaging
+    
+    let UnzipFile (path: string) (outputFolder: string) = failwith "UnzipFile requires SharpZipLib"
+    let UnzipFileToTmp (path: string) = failwith "UnzipFileToTmp requires SharpZipLib"
+    
+    let ZipPath (zipfile: string) (path: string) = 
         use zip = Package.Open(zipfile, FileMode.CreateNew)
         for fpath in Directory.GetFiles(path, "*.*", SearchOption.AllDirectories) do
             let fileUri = new Uri("/" + fpath.Replace(path, ""), UriKind.Relative)
             let packagePart = zip.CreatePart(fileUri, Net.Mime.MediaTypeNames.Application.Octet, CompressionOption.Fast)
             use stream = new FileStream(fpath, FileMode.Open, FileAccess.Read)
             stream.CopyTo(packagePart.GetStream())
+        zip.Close()  
+#else
+    open ICSharpCode.SharpZipLib.Core
+    open ICSharpCode.SharpZipLib.Zip
+    
+    let UnzipFile (path: string) (outputFolder: string) = 
+        let zipName = Path.GetFileNameWithoutExtension(path)
+        mkdir_p outputFolder
+        
+        use zip = new ZipFile(path)
+        for zipEntry in zip do
+            let zipEntry = zipEntry :?> ZipEntry // -_-'
+            if zipEntry.IsDirectory then
+                if not (Directory.Exists(outputFolder @@ zipEntry.Name)) then
+                    mkdir (outputFolder @@ zipEntry.Name)
+            else
+                use stream = new FileStream(outputFolder @@ zipEntry.Name, FileMode.CreateNew, FileAccess.Write)
+                (zip.GetInputStream(zipEntry).CopyTo(stream))
+        zip.IsStreamOwner <- true
         zip.Close()
+        
+        // Did the zip also include an single dir root directory (zip name?)
+        if Directory.GetFileSystemEntries(outputFolder).Length = 1
+           && zipName.ToLower() = Directory.GetDirectories(outputFolder).[0].ToLower() then
+            Directory.GetDirectories(outputFolder).[0]
+        else
+            outputFolder
+
+    let UnzipFileToTmp (path: string) = 
+        UnzipFile path (Path.GetTempPath() @@ (Guid.NewGuid()).ToString())
+    
+    let ZipPath (zipfile: string) (path: string) = 
+        use zip = ZipFile.Create(zipfile)
+        zip.AddDirectory(path)
+        zip.IsStreamOwner <- true
+        zip.Close()
+        
+        path
+#endif 

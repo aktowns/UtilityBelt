@@ -27,9 +27,43 @@ namespace UtilityBelt
 open System.IO
 
 module File =
-    let mkdir (dir: string) = Directory.CreateDirectory(dir) |> ignore
+    let (|FileExist|_|) item = 
+        if File.Exists(item) then Some item
+        else None
+
+    let (|DirExist|_|) item =
+        if Directory.Exists(item) then Some item
+        else None
+        
+    let (|FileNotExist|_|) item = 
+        if not (File.Exists(item)) then Some item
+        else None
+
+    let (|DirNotExist|_|) item =
+        if not (Directory.Exists(item)) then Some item
+        else None
+
+    let parent (source: string) = Directory.GetParent(source.TrimEnd([|'/'|])).FullName
     let cp (source: string) (target: string) = File.Copy(source, target, false)
     let rm (source: string) = File.Delete(source)
+    let mkdir (dir: string) = 
+        if (Directory.Exists(parent dir)) then Directory.CreateDirectory(dir) |> ignore
+        else failwithf "Cannot create %s, parent directory does not exist" dir
+    let mkdir_p (dir: string) = Directory.CreateDirectory(dir) |> ignore
+
+    let filesIn dir = Directory.GetFiles(dir) |> List.ofArray
+    let filesInRec dir = Directory.GetFiles(dir, "*", SearchOption.AllDirectories) |> List.ofArray
+    
+    let filesWithPattern dir pattern = Directory.GetFiles(dir, pattern) |> List.ofArray
+    let filesWithPatternRec dir pattern = 
+        Directory.GetFiles(dir, pattern, SearchOption.AllDirectories) |> List.ofArray
+
+    let dirsIn dir = Directory.GetDirectories(dir) |> List.ofArray
+    let dirsInRec dir = Directory.GetDirectories(dir, "*", SearchOption.AllDirectories) |> List.ofArray
+    
+    let dirsWithPattern dir pattern = Directory.GetDirectories(dir, pattern) |> List.ofArray
+    let dirsWithPatternRec dir pattern = 
+        Directory.GetDirectories(dir, pattern, SearchOption.AllDirectories) |> List.ofArray
 
     let rec GetFreeFile state (generator: int -> string) =
         let out = generator state
@@ -41,5 +75,11 @@ module File =
         if Directory.Exists(out) then (GetFreeDir (state + 1) generator)
         else out
 
+    let rec firstOccurenceOfFile (file: string) (dir: string) : string option = 
+        match (filesWithPattern dir file) with
+        | [file] -> Some file
+        | _ :: _ -> failwithf "Search returned multiple files with the same name, this is impossible."
+        | [] -> List.tryPick (firstOccurenceOfFile file) (dirsIn dir)
+        
     let inline (@@) basePath newPath = Path.Combine(basePath, newPath)
     

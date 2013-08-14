@@ -42,3 +42,8 @@ module Option =
         | null -> None
         | x -> Some x 
         
+    let ifNoneFailwith (message: string) (opt: 'a option)  =
+        match opt with
+        | None -> failwith message
+        | Some x -> x
+        
